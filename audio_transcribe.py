@@ -5,6 +5,7 @@ import sys
 import os
 from os import path
 import lib
+import threading
 
 # gui classess
 from tkinter import *
@@ -12,7 +13,22 @@ from tkinter import filedialog
 from tkinter import messagebox
 
 
-class TRANSCRIBE:
+class TRANSCRIBE(object):
+    def __init__(self, filename, trans_type):
+        r = sr.Recognizer()
+        AUDIO_FILE = path.join(path.dirname(path.realpath(__file__)), filename)
+        # use the audio file as the audio source
+        with sr.AudioFile(AUDIO_FILE) as source:
+            audio = r.record(source)  # read the entire audio file
+
+        self.finished = False
+        print('init thread')
+        thread = threading.Thread(target=self.functions[trans_type](self, r, audio))
+        print('starting')
+        thread.start()
+        thread.join()
+        print('finished')
+
     def sphinx(self, r, audio):
         try:
             return r.recognize_sphinx(audio)
@@ -20,17 +36,19 @@ class TRANSCRIBE:
             return "Sphinx could not understand audio"
         except sr.RequestError as e:
             return "Sphinx error; {0}".format(e)
+        self.finished = True
 
     def google(self, r, audio):
         try:
             # for testing purposes, we're just using the default API key
             # to use another API key, use `r.recognize_google(audio, key="GOOGLE_SPEECH_RECOGNITION_API_KEY")`
             # instead of `r.recognize_google(audio)`
-            return r.recognize_google(audio)
+            self.transcription = r.recognize_google(audio)
         except sr.UnknownValueError:
             return "Google Speech Recognition could not understand audio"
         except sr.RequestError as e:
             return "Could not request results from Google Speech Recognition service; {0}".format(e)
+        self.finished = True
 
     def google_cloud(self, r, audio):
         GOOGLE_CLOUD_SPEECH_CREDENTIALS = r"""INSERT THE CONTENTS OF THE GOOGLE CLOUD SPEECH JSON CREDENTIALS FILE HERE"""
@@ -40,6 +58,7 @@ class TRANSCRIBE:
             return "Google Cloud Speech could not understand the audio"
         except sr.RequestError as e:
             return "Could not request results from Google Cloud Speech service; {0}".format(e)
+        self.finished = True
 
     def wit(self, r, audio):
         # Wit.ai keys are 32-character uppercase alphanumeric strings
@@ -50,6 +69,7 @@ class TRANSCRIBE:
             return "Wit.ai could not understand audio"
         except sr.RequestError as e:
             return "Could not request results from Wit.ai service; {0}".format(e)
+        self.finished = True
 
     def azure(self, r, audio):
         # Microsoft Speech API keys 32-character lowercase hexadecimal strings
@@ -60,6 +80,7 @@ class TRANSCRIBE:
             return "Microsoft Azure Speech could not understand audio"
         except sr.RequestError as e:
             return "Could not request results from Microsoft Azure Speech service; {0}".format(e)
+        self.finished = True
 
     def bing(self, r, audio):
         # Microsoft Bing Voice Recognition API keys 32-character lowercase hexadecimal strings
@@ -70,6 +91,7 @@ class TRANSCRIBE:
             return "Microsoft Bing Voice Recognition could not understand audio"
         except sr.RequestError as e:
             return "Could not request results from Microsoft Bing Voice Recognition service; {0}".format(e)
+        self.finished = True
 
     def houndify(self, r, audio):
         # Houndify client IDs are Base64-encoded strings
@@ -82,6 +104,7 @@ class TRANSCRIBE:
             return "Houndify could not understand audio"
         except sr.RequestError as e:
             return "Could not request results from Houndify service; {0}".format(e)
+        self.finished = True
 
     def ibm(self, r, audio):
         # IBM Speech to Text usernames are strings of the form XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX
@@ -94,15 +117,27 @@ class TRANSCRIBE:
             return "IBM Speech to Text could not understand audio"
         except sr.RequestError as e:
             return "Could not request results from IBM Speech to Text service; {0}".format(e)
+        self.finished = True
+
+    functions = {
+        'sphinx': sphinx,
+        'google': google,
+        'google_cloud': google_cloud,
+        'wit': wit,
+        'azure': azure,
+        'bing': bing,
+        'houndify': houndify,
+        'ibm': ibm
+    }
 
 
 class GUI:
     def __init__(self):
-        self.root = Tk()
-        self.root.title('FreePBX Transcription')
-        self.root.geometry('480x120')
+        root = Tk()
+        root.title('FreePBX Transcription')
+        root.geometry('480x120')
         # Control Full Frame
-        full_frame = Frame(self.root)
+        full_frame = Frame(root)
         #
         #
         # Buttons Frame
@@ -129,13 +164,18 @@ class GUI:
         # Trascribe Frame
         transcribe_frame = Frame(full_frame)
         # Transcribe Types
-        self.transcribe_type = StringVar()
-        audio_recognition_types = ['sphinx', 'google', 'google_cloud', 'wit', 'azure', 'bing', 'houndify', 'ibm']
+        self.recoginition_type = StringVar()
+        audio_recognition_types = [
+            'sphinx', 'google', 'google_cloud', 'wit', 'azure', 'bing', 'houndify', 'ibm']
         audio_recognition_type_menu = Spinbox(
-            transcribe_frame, values=audio_recognition_types, textvariable=audio_recognition_types, state='readonly').pack(side=LEFT)
+            transcribe_frame, values=audio_recognition_types, textvariable=self.recoginition_type, state='readonly').pack(side=LEFT)
         # Transcribe Button
         transcribe_button = Button(
             transcribe_frame, text='Transcribe', command=self.transcribe).pack(side=LEFT, padx=20)
+        # Progress Label
+        self.progress = StringVar()
+        transcribe_label = Label(
+            transcribe_frame, textvariable=self.progress).pack(side=LEFT)
         # Add transcribe frame to window
         transcribe_frame.pack(pady=(10, 20), padx=10, side=BOTTOM)
         #
@@ -144,43 +184,36 @@ class GUI:
         full_frame.pack()
 
         # Run man GUI threads
-        self.root.mainloop()
+        root.mainloop()
 
     def getDIR(self):
         self.directory = filedialog.askdirectory()
-        self.transcribe_type = 'dir'
+        self.select_type = 'dir'
 
     def getFILE(self):
         self.filename = filedialog.askopenfilename()
-        self.transcribe_type = 'file'
+        self.select_type = 'file'
+        last_index = self.filename.rfind('/')
+        self.progress.set("Loaded: %s" % self.filename[last_index+1:])
 
     def transcribe(self):
-        trans_type = self.transcribe_type.get()
-        if(self.transcribe_type == 'dir'):
+        trans_type = self.recoginition_type.get()
+        if(self.select_type == 'dir'):
             self.transcribeDirectory(self.directory, trans_type)
-        elif(self.transcribe_type == 'file'):
+        elif(self.select_type == 'file'):
             self.transcribeFile(self.filename, trans_type)
         else:
             messagebox.showinfo(
                 "Error", "You must either select a directory or file to Transcribe")
 
     def transcribeFile(self, filename, trans_type):
-        wav_file = filename
-        AUDIO_FILE = path.join(path.dirname(path.realpath(__file__)), wav_file)
-        # use the audio file as the audio source
-        r = sr.Recognizer()
-        with sr.AudioFile(AUDIO_FILE) as source:
-            audio = r.record(source)  # read the entire audio file
-        last_index = wav_file.rfind('/')
-        print(wav_file[last_index+1:-4])
+        last_index = filename.rfind('/')
         text_file = open("transcript_of_" +
-                         wav_file[last_index+1:-4] + ".txt", "w")
-        print("Transcribing: %s" % wav_file[2:])
-        print(trans_type)
-        sys.exit()
-        text_file.write(TRANSCRIBE.trans_type(self, r, audio) + "\n\n")
+                         filename[last_index+1:-4] + ".txt", "w")
+        self.progress.set("Transcribing: %s" % filename[last_index+1:])
+        text_file.write(TRANSCRIBE(filename, trans_type).transcription + "\n\n")
         text_file.close()
-        print('Finished file: %s' % wav_file[2:])
+        self.progress.set('Finished: %s' % filename[last_index+1:])
 
     def transcribeDirectory(self, directory_path, trans_type):
         # get all directories
@@ -210,13 +243,6 @@ class GUI:
                     # convert wav files to text
                     for wav_file in os.listdir('./'):
                         if wav_file.endswith(".wav"):
-                            AUDIO_FILE = path.join(path.dirname(
-                                path.realpath(__file__)), wav_file)
-                            # use the audio file as the audio source
-                            r = sr.Recognizer()
-                            with sr.AudioFile(AUDIO_FILE) as source:
-                                # read the entire audio file
-                                audio = r.record(source)
                             message_text_file = open(
                                 (wav_file[:-3] + 'txt'), "r")
                             skip = False
@@ -238,10 +264,13 @@ class GUI:
                                         caller + ' ' + timestamp + "\n" + "No Audio" + "\n\n")
                                 else:
                                     text_file.write(
-                                        caller + ' ' + timestamp + "\n" + self.functions[self.transcribe_type](self, r, audio) + "\n\n")
+                                        caller + ' ' + timestamp + "\n" + TRANSCRIBE(wav_file, trans_type).transcription + "\n\n")
                                 print("message " + str(count) + " of " +
                                       str(wav_count) + " finished")
                                 count += 1
+                            else:
+                                text_file.write(TRANSCRIBE(
+                                    wav_file, trans_type).transcription + "\n\n")
 
                     # close transcript.txt file
                     text_file.close()
