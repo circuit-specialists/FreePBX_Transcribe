@@ -6,6 +6,7 @@ import os
 from os import path
 import lib
 import threading
+from googletrans import Translator
 
 # gui classess
 from tkinter import *
@@ -21,44 +22,37 @@ class TRANSCRIBE(object):
         with sr.AudioFile(AUDIO_FILE) as source:
             audio = r.record(source)  # read the entire audio file
 
-        self.finished = False
-        print('init thread')
-        thread = threading.Thread(target=self.functions[trans_type](self, r, audio))
-        print('starting')
-        thread.start()
-        thread.join()
-        print('finished')
+        self.transcription = self.functions[trans_type](self, r, audio)
 
     def sphinx(self, r, audio):
         try:
             return r.recognize_sphinx(audio)
         except sr.UnknownValueError:
-            return "Sphinx could not understand audio"
+            raise(ValueError + "Sphinx could not understand audio")
         except sr.RequestError as e:
-            return "Sphinx error; {0}".format(e)
-        self.finished = True
+            raise ValueError("Sphinx error; {0}".format(e))
 
     def google(self, r, audio):
         try:
             # for testing purposes, we're just using the default API key
             # to use another API key, use `r.recognize_google(audio, key="GOOGLE_SPEECH_RECOGNITION_API_KEY")`
             # instead of `r.recognize_google(audio)`
-            self.transcription = r.recognize_google(audio)
+            return r.recognize_google(audio)
         except sr.UnknownValueError:
-            return "Google Speech Recognition could not understand audio"
+            raise(ValueError + "Google Speech Recognition could not understand audio")
         except sr.RequestError as e:
-            return "Could not request results from Google Speech Recognition service; {0}".format(e)
-        self.finished = True
+            raise(
+                ValueError + "Could not request results from Google Speech Recognition service; {0}".format(e))
 
     def google_cloud(self, r, audio):
         GOOGLE_CLOUD_SPEECH_CREDENTIALS = r"""INSERT THE CONTENTS OF THE GOOGLE CLOUD SPEECH JSON CREDENTIALS FILE HERE"""
         try:
             return r.recognize_google_cloud(audio, credentials_json=GOOGLE_CLOUD_SPEECH_CREDENTIALS)
         except sr.UnknownValueError:
-            return "Google Cloud Speech could not understand the audio"
+            raise(ValueError + "Google Cloud Speech could not understand the audio")
         except sr.RequestError as e:
-            return "Could not request results from Google Cloud Speech service; {0}".format(e)
-        self.finished = True
+            raise(
+                ValueError + "Could not request results from Google Cloud Speech service; {0}".format(e))
 
     def wit(self, r, audio):
         # Wit.ai keys are 32-character uppercase alphanumeric strings
@@ -66,10 +60,10 @@ class TRANSCRIBE(object):
         try:
             return r.recognize_wit(audio, key=WIT_AI_KEY)
         except sr.UnknownValueError:
-            return "Wit.ai could not understand audio"
+            raise(ValueError + "Wit.ai could not understand audio")
         except sr.RequestError as e:
-            return "Could not request results from Wit.ai service; {0}".format(e)
-        self.finished = True
+            raise(
+                ValueError + "Could not request results from Wit.ai service; {0}".format(e))
 
     def azure(self, r, audio):
         # Microsoft Speech API keys 32-character lowercase hexadecimal strings
@@ -77,10 +71,10 @@ class TRANSCRIBE(object):
         try:
             return r.recognize_azure(audio, key=AZURE_SPEECH_KEY)
         except sr.UnknownValueError:
-            return "Microsoft Azure Speech could not understand audio"
+            raise(ValueError + "Microsoft Azure Speech could not understand audio")
         except sr.RequestError as e:
-            return "Could not request results from Microsoft Azure Speech service; {0}".format(e)
-        self.finished = True
+            raise(
+                ValueError + "Could not request results from Microsoft Azure Speech service; {0}".format(e))
 
     def bing(self, r, audio):
         # Microsoft Bing Voice Recognition API keys 32-character lowercase hexadecimal strings
@@ -88,10 +82,11 @@ class TRANSCRIBE(object):
         try:
             return r.recognize_bing(audio, key=BING_KEY)
         except sr.UnknownValueError:
-            return "Microsoft Bing Voice Recognition could not understand audio"
+            raise(
+                ValueError + "Microsoft Bing Voice Recognition could not understand audio")
         except sr.RequestError as e:
-            return "Could not request results from Microsoft Bing Voice Recognition service; {0}".format(e)
-        self.finished = True
+            raise(
+                ValueError + "Could not request results from Microsoft Bing Voice Recognition service; {0}".format(e))
 
     def houndify(self, r, audio):
         # Houndify client IDs are Base64-encoded strings
@@ -101,10 +96,10 @@ class TRANSCRIBE(object):
         try:
             return r.recognize_houndify(audio, client_id=HOUNDIFY_CLIENT_ID, client_key=HOUNDIFY_CLIENT_KEY)
         except sr.UnknownValueError:
-            return "Houndify could not understand audio"
+            raise(ValueError + "Houndify could not understand audio")
         except sr.RequestError as e:
-            return "Could not request results from Houndify service; {0}".format(e)
-        self.finished = True
+            raise(
+                ValueError + "Could not request results from Houndify service; {0}".format(e))
 
     def ibm(self, r, audio):
         # IBM Speech to Text usernames are strings of the form XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX
@@ -114,10 +109,10 @@ class TRANSCRIBE(object):
         try:
             return r.recognize_ibm(audio, username=IBM_USERNAME, password=IBM_PASSWORD)
         except sr.UnknownValueError:
-            return "IBM Speech to Text could not understand audio"
+            raise(ValueError + "IBM Speech to Text could not understand audio")
         except sr.RequestError as e:
-            return "Could not request results from IBM Speech to Text service; {0}".format(e)
-        self.finished = True
+            raise(
+                ValueError + "Could not request results from IBM Speech to Text service; {0}".format(e))
 
     functions = {
         'sphinx': sphinx,
@@ -211,9 +206,16 @@ class GUI:
         text_file = open("transcript_of_" +
                          filename[last_index+1:-4] + ".txt", "w")
         self.progress.set("Transcribing: %s" % filename[last_index+1:])
-        text_file.write(TRANSCRIBE(filename, trans_type).transcription + "\n\n")
-        text_file.close()
-        self.progress.set('Finished: %s' % filename[last_index+1:])
+        try:
+            transcribed_text = TRANSCRIBE(filename, trans_type).transcription
+            translator = Translator()
+            translated_text = translator.translate(transcribed_text).text
+            text_file.write(translated_text + "\n\n")
+            text_file.close()
+            self.progress.set('Finished: %s' % filename[last_index+1:])
+        except Exception as e:
+            temp = str(e).replace('; ', '\n').replace(': ', '\n')
+            messagebox.showinfo("Error", temp)
 
     def transcribeDirectory(self, directory_path, trans_type):
         # get all directories
