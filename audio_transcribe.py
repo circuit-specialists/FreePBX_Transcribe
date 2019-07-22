@@ -228,32 +228,32 @@ class GUI:
                 os.chdir(directory)
                 print(os.getcwd())
 
-                # create a new text file with the name of the current working directory
+                # transcription file of current working directory
                 cwd = str(os.getcwd())
                 last_index = cwd.rfind('\\')
                 text_file = open("transcript_of_" +
                                  cwd[last_index+1] + ".txt", "w")
 
-                # count all wav files in working directory
-                count = 1
-                wav_count = 0
-                for wav_file in os.listdir('./'):
-                    if wav_file.endswith(".wav"):
-                        wav_count += 1
+                # supported file types
+                supported_audio_types = [".wav", ".mp3"]
+                audio_file_count = 0
+                for file in os.listdir('./'):
+                    if(supported_audio_types in file):
+                        audio_file_count += 1
 
                 try:
                     # convert wav files to text
-                    for wav_file in os.listdir('./'):
-                        if wav_file.endswith(".wav"):
-                            message_text_file = open(
-                                (wav_file[:-3] + 'txt'), "r")
+                    for count, audio_file in enumerate(os.listdir('./')):
+                        if supported_audio_types in audio_file:
                             skip = False
 
                             if(self.select_freepbx.get()):
+                                message_text_file = open(
+                                    (audio_file[:-3] + 'txt'), "r")
+
                                 # get text data from txt file acconting the wav file
                                 for line_number, line in enumerate(message_text_file):
                                     if(line_number == 11):
-                                        # .replace("<", "").replace(">", "")
                                         caller = line[line.index(
                                             '\"') + 1:-1].replace("\"", '')
                                     elif(line_number == 12):
@@ -266,13 +266,12 @@ class GUI:
                                         caller + ' ' + timestamp + "\n" + "No Audio" + "\n\n")
                                 else:
                                     text_file.write(
-                                        caller + ' ' + timestamp + "\n" + TRANSCRIBE(wav_file, trans_type).transcription + "\n\n")
+                                        caller + ' ' + timestamp + "\n" + TRANSCRIBE(audio_file, trans_type).transcription + "\n\n")
                                 print("message " + str(count) + " of " +
-                                      str(wav_count) + " finished")
-                                count += 1
+                                      str(count) + " finished")
                             else:
                                 text_file.write(TRANSCRIBE(
-                                    wav_file, trans_type).transcription + "\n\n")
+                                    audio_file, trans_type).transcription + "\n\n")
 
                     # close transcript.txt file
                     text_file.close()
